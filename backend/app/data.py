@@ -20,34 +20,18 @@ import functools
 
 import pandas as pd
 
+from .countries_ref import REGION_INCOME
+
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
 LOCAL_CSV_PATH = os.path.join(DATA_DIR, "energy.csv")
 
 KAGGLE_DATASET = "alitaqishah/world-energy-transition-20002025"
 KAGGLE_CSV_NAME = "global_renewable_energy_transition_2000_2025.csv"
 
-# Static lookup so the API can return the same `region` / `incomeGroup`
-# fields the frontend already expects, even though the raw Kaggle dataset
-# doesn't include them. Falls back to "Unclassified" for any country not
-# listed here.
-REGION_INCOME = {
-    "United States": ("North America", "High income"),
-    "Germany": ("Europe", "High income"),
-    "China": ("Asia", "Upper middle income"),
-    "India": ("Asia", "Lower middle income"),
-    "Brazil": ("South America", "Upper middle income"),
-    "Norway": ("Europe", "High income"),
-    "France": ("Europe", "High income"),
-    "United Kingdom": ("Europe", "High income"),
-    "Japan": ("Asia", "High income"),
-    "Australia": ("Oceania", "High income"),
-    "Canada": ("North America", "High income"),
-    "Spain": ("Europe", "High income"),
-    "Italy": ("Europe", "High income"),
-    "South Africa": ("Africa", "Upper middle income"),
-    "Mexico": ("North America", "Upper middle income"),
-    "Sweden": ("Europe", "High income"),
-}
+# `REGION_INCOME` (imported above) maps country name -> (region, income
+# group). Falls back to "Unclassified" for any country not listed in the
+# shared reference table (e.g. if you swap in the real Kaggle CSV, which
+# may include countries beyond the ones catalogued in countries_ref.py).
 
 
 def _load_raw() -> pd.DataFrame:

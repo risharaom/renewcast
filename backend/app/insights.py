@@ -1,50 +1,74 @@
 """
 Turns the trained model + clustering output into the exact JSON shapes the
-existing React frontend already expects (see src/lib/energy-data.ts):
+frontend expects (see js/data.js and js/forecast.js):
 
     Country  { code, name, region, incomeGroup, population, gdp,
                renewableShare, fossilShare, carbonIntensity, cluster }
     Cluster  { id, name, description, avgRenewable, avgFossil,
-               avgDemand, avgCarbon }
+               avgDemand, avgCarbon, memberCodes }
     Forecast { country, targetYear, series[], stats }
+
+Unlike an earlier version, this reads whatever countries are actually
+present in the dataset — it doesn't limit the site to a fixed whitelist.
+`countries_ref.py` is only used to fill in a friendly code/region/income
+for names it recognizes; anything else still shows up, just with an
+auto-generated code and "Unclassified" region/income.
 """
 
 from __future__ import annotations
 
+import functools
+
 import pandas as pd
 
 from .data import region_income_for, FEATURES
+from .countries_ref import NAME_TO_CODE as KNOWN_NAME_TO_CODE
 from .model import get_trained_state
 
-# The 16 countries surfaced in the UI (same set as the original mock data),
-# mapped to how they appear in the Kaggle `country` column.
-CODE_TO_NAME = {
-    "US": "United States",
-    "DE": "Germany",
-    "CN": "China",
-    "IN": "India",
-    "BR": "Brazil",
-    "NO": "Norway",
-    "FR": "France",
-    "GB": "United Kingdom",
-    "JP": "Japan",
-    "AU": "Australia",
-    "CA": "Canada",
-    "ES": "Spain",
-    "IT": "Italy",
-    "ZA": "South Africa",
-    "MX": "Mexico",
-    "SE": "Sweden",
-}
-NAME_TO_CODE = {v: k for k, v in CODE_TO_NAME.items()}
+
+def _fallback_code(name: str, used: set[str]) -> str:
+    """Derives a short, unique code for a country not in the reference
+    table (e.g. one that only appears in a real Kaggle CSV you swapped in)."""
+    words = [w for w in name.replace("-", " ").split() if w]
+    base = ("".join(w[0] for w in words[:3])).upper() if len(words) > 1 else name[:3].upper()
+    base = base[:3] or "XX"
+    candidate = base
+    n = 1
+    while candidate in used:
+        n += 1
+        candidate = f"{base}{n}"
+    return candidate
+
+
+@functools.lru_cache(maxsize=1)
+def build_code_maps() -> tuple[dict, dict]:
+    """Builds code<->name maps covering every country actually present in
+    the loaded dataset — known countries get their canonical code from
+    countries_ref.py, unknown ones get a generated one. Cached per process
+    (same lifetime as the trained model)."""
+    state = get_trained_state()
+    names = sorted(state.df["country"].unique().tolist())
+
+    name_to_code = {}
+    used_codes = set()
+    for name in names:
+        code = KNOWN_NAME_TO_CODE.get(name)
+        if code is None:
+            code = _fallback_code(name, used_codes)
+        name_to_code[name] = code
+        used_codes.add(code)
+
+    code_to_name = {code: name for name, code in name_to_code.items()}
+    return code_to_name, name_to_code
 
 
 def list_countries() -> list[dict]:
     state = get_trained_state()
     df = state.df
+    code_to_name, _ = build_code_maps()
 
     out = []
-    for code, name in CODE_TO_NAME.items():
+    for code, name in sorted(code_to_name.items(), key=lambda kv: kv[1]):
         rows = df[df["country"] == name]
         if rows.empty:
             continue
@@ -72,6 +96,7 @@ def list_clusters() -> list[dict]:
     state = get_trained_state()
     summary = state.cluster_summary
     df = state.df
+    _, name_to_code = build_code_maps()
 
     # Order clusters by renewable share so "Cluster 3" reads as the
     # cleanest group, matching the feel of the original mock data.
@@ -88,7 +113,7 @@ def list_clusters() -> list[dict]:
     for new_id, old_id in enumerate(ordered_ids):
         row = summary.loc[old_id]
         members = df[df["Cluster"] == old_id]["country"].unique().tolist()
-        member_codes = [NAME_TO_CODE[m] for m in members if m in NAME_TO_CODE]
+        member_codes = sorted(name_to_code[m] for m in members if m in name_to_code)
         clusters.append(
             {
                 "id": new_id,
@@ -113,7 +138,8 @@ def _country_rows(name: str) -> pd.DataFrame:
 
 def forecast_country(code: str, target_year: int) -> dict:
     state = get_trained_state()
-    name = CODE_TO_NAME.get(code.upper())
+    code_to_name, _ = build_code_maps()
+    name = code_to_name.get(code.upper())
     if name is None:
         raise ValueError(f"Unknown country code: {code}")
 
@@ -139,8 +165,7 @@ def forecast_country(code: str, target_year: int) -> dict:
             }
         )
 
-    # Overlap point so the historical/predicted lines connect on the chart,
-    # same trick the original mock data used.
+    # Overlap point so the historical/predicted lines connect on the chart.
     if series:
         series[-1]["predictedGeneration"] = series[-1]["historicalGeneration"]
         series[-1]["predictedDemand"] = series[-1]["historicalDemand"]
@@ -191,12 +216,10 @@ def forecast_country(code: str, target_year: int) -> dict:
             }
         )
 
-        # roll the lag features forward using our own predictions
         renew_lags = [predicted_gen, renew_lags[0], renew_lags[1]]
         demand_lag1 = predicted_dem
 
     if predicted_gen is None:
-        # target year already inside the historical range
         last = series[-1]
         predicted_gen = last["historicalGeneration"]
         predicted_dem = last["historicalDemand"]
