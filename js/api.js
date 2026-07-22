@@ -9,7 +9,7 @@
 // machine) this points at localhost automatically. Once you deploy the
 // backend somewhere public (see backend/README.md), put that URL here —
 // it'll be used automatically for anyone visiting the published site.
-const DEPLOYED_API_BASE = ""; // e.g. "https://renewcast-backend.onrender.com"
+const DEPLOYED_API_BASE = "https://renewcast-backend.onrender.com"; // e.g. "https://renewcast-backend.onrender.com"
 
 const isLocal = ["localhost", "127.0.0.1", ""].includes(location.hostname);
 const API_BASE = isLocal ? "http://localhost:8000" : DEPLOYED_API_BASE;
