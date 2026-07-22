@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Country Analysis — RenewCast</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand"><span class="dot"></span> RenewCast</div>
+    <nav class="links" id="nav"></nav>
+  </div>
+</header>
+
+<div class="container">
+  <div class="page-head" style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:16px;">
+    <div>
+      <h1>Country profile</h1>
+      <p>Explore the energy fundamentals feeding the model.</p>
+      <div id="liveBadge" style="margin-top:10px;"></div>
+    </div>
+    <div style="width:240px;">
+      <select id="countrySelect"></select>
+    </div>
+  </div>
+
+  <div class="card" style="overflow:hidden;padding:0;">
+    <div style="height:6px;background:linear-gradient(90deg,#16a34a,#0d9488);"></div>
+    <div style="padding:24px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;" id="headerCard"></div>
+  </div>
+
+  <div class="section grid grid-4" id="profileCards"></div>
+</div>
+
+<script src="js/main.js"></script>
+<script src="js/data.js"></script>
+<script src="js/kmeans.js"></script>
+<script src="js/clusters.js"></script>
+<script src="js/api.js"></script>
+<script>
+renderNav("country.html");
+
+let countries = [];
+
+function profileCard(tone, label, value, opts = {}) {
+  const bar = opts.bar != null ? `<div class="bar${opts.barTone === "sun" ? " sun" : ""}"><div style="width:${Math.min(100, opts.bar)}%"></div></div>` : "";
+  const sub = opts.sub ? `<div class="sub">${opts.sub}</div>` : "";
+  return `<div class="card stat tone-${tone}"><div class="icon">●</div><div class="label" style="text-transform:uppercase;font-size:11px;letter-spacing:.03em;">${label}</div><div class="value" style="font-size:17px;margin-top:2px;">${value}</div>${sub}${bar}</div>`;
+}
+
+function render(code) {
+  const c = countries.find(x => x.code === code) || countries[0];
+
+  document.getElementById("headerCard").innerHTML = `
+    <div style="width:56px;height:56px;border-radius:16px;background:var(--green-soft);color:var(--green);display:grid;place-items:center;font-weight:700;font-size:18px;">${c.code}</div>
+    <div>
+      <div style="font-size:22px;font-weight:650;">${c.name}</div>
+      <div class="muted" style="font-size:13.5px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <span>📍 ${c.region}</span><span>·</span><span>${c.incomeGroup}</span>
+        <span class="badge">Cluster ${c.cluster}</span>
+      </div>
+    </div>
+  `;
+
+  document.getElementById("profileCards").innerHTML = [
+    profileCard("blue", "Region", c.region),
+    profileCard("teal", "Income group", c.incomeGroup),
+    profileCard("green", "Population", `${fmt(c.population,1)} M`),
+    profileCard("sun", "GDP", `$${c.gdp} T`),
+    profileCard("green", "Renewable share", `${c.renewableShare}%`, { bar: c.renewableShare, barTone: "green" }),
+    profileCard("sun", "Fossil fuel share", `${c.fossilShare}%`, { bar: c.fossilShare, barTone: "sun" }),
+    profileCard("blue", "Carbon intensity", `${c.carbonIntensity} g/kWh`),
+    profileCard("teal", "Cluster ID", `#${c.cluster}`, { sub: "See Clustering page" }),
+  ].join("");
+}
+
+(async () => {
+  const live = await isBackendLive();
+  renderLiveBadge("liveBadge", live);
+  countries = (live && await apiFetchCountries()) || computeClusters().countries;
+
+  const countrySelect = document.getElementById("countrySelect");
+  countrySelect.innerHTML = countries.map(c => `<option value="${c.code}" ${c.code === "DE" ? "selected" : ""}>${c.name}</option>`).join("");
+  countrySelect.addEventListener("change", (e) => render(e.target.value));
+
+  render("DE");
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>About — RenewCast</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand"><span class="dot"></span> RenewCast</div>
+    <nav class="links" id="nav"></nav>
+  </div>
+</header>
+
+<div class="container">
+  <div class="page-head">
+    <h1>How this works</h1>
+    <p>What's really running behind these pages.</p>
+  </div>
+
+  <div class="card">
+    <h3 style="margin:0 0 6px;font-size:15px;">The real thing, running for real</h3>
+    <p class="muted" style="font-size:13.5px;">
+      Unlike an earlier version of this site, the Forecast, Clustering and
+      Country pages here call an actual Python backend
+      (<code>/backend</code>) that runs your notebook's real pipeline:
+      the same <code>pandas</code> cleaning and lag-feature engineering,
+      the same <code>RandomForestRegressor(n_estimators=100, random_state=42)</code>
+      for both models, and the same <code>KMeans(n_clusters=4)</code> clustering.
+    </p>
+    <p class="muted" style="font-size:13.5px;">
+      If that backend isn't running, every page falls back to a lightweight
+      JS approximation instead (so the site never breaks) — look for the
+      "Live Python model" vs. "Preview data" badge at the top of each page
+      to see which one you're looking at.
+    </p>
+  </div>
+
+  <div class="card">
+    <h3 style="margin:0 0 6px;font-size:15px;">Starting the real model</h3>
+    <p class="muted" style="font-size:13.5px;">
+      Run <code>run_backend.sh</code> (Mac/Linux) or <code>run_backend.bat</code>
+      (Windows) once — it sets up Python automatically and starts the API
+      at <code>http://localhost:8000</code>. Then open <code>index.html</code>
+      as usual. See <code>README.md</code> for the full walkthrough.
+    </p>
+  </div>
+
+  <div class="card">
+    <h3 style="margin:0 0 6px;font-size:15px;">About the bundled dataset</h3>
+    <p class="muted" style="font-size:13.5px;">
+      This project ships with a ready-to-use starter dataset
+      (<code>backend/data/energy.csv</code>) shaped exactly like the real
+      Kaggle "world-energy-transition-2000-2025" dataset, so it runs
+      immediately with zero setup. Swap in the real Kaggle file any time —
+      see <code>README.md</code> for how.
+    </p>
+  </div>
+</div>
+
+<script src="js/main.js"></script>
+<script>renderNav("about.html");</script>
+</body>
+</html>

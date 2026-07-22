@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Forecast — RenewCast</title>
+<link rel="stylesheet" href="css/style.css" />
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand"><span class="dot"></span> RenewCast</div>
+    <nav class="links" id="nav"></nav>
+  </div>
+</header>
+
+<div class="container">
+  <div class="page-head">
+    <h1>Forecast</h1>
+    <p>Predict renewable electricity generation and demand for any country up to 2030.</p>
+    <div id="liveBadge" style="margin-top:10px;"></div>
+  </div>
+
+  <div class="card">
+    <div class="controls-row">
+      <div>
+        <label class="field-label">Country</label>
+        <select id="countrySelect"></select>
+      </div>
+      <div>
+        <label class="field-label">Forecast year</label>
+        <select id="yearSelect">
+          <option value="2026">2026</option>
+          <option value="2027">2027</option>
+          <option value="2028">2028</option>
+          <option value="2029">2029</option>
+          <option value="2030" selected>2030</option>
+        </select>
+      </div>
+      <button class="btn" id="runBtn">Generate Forecast</button>
+    </div>
+  </div>
+
+  <div id="empty" class="section empty-state">
+    <div class="icon-lg">✦</div>
+    <div style="font-weight:650;font-size:16px;">Ready to forecast</div>
+    <div style="max-width:420px;margin:6px auto 0;font-size:13.5px;">
+      Pick a country and horizon above, then generate a prediction.
+    </div>
+  </div>
+
+  <div id="results" class="section" style="display:none;">
+    <div class="grid grid-4" id="statCards"></div>
+    <div class="section grid grid-2">
+      <div class="card chart-card">
+        <h3>Renewable Electricity Generation</h3>
+        <p class="desc">Historical vs predicted (TWh)</p>
+        <canvas id="genChart"></canvas>
+      </div>
+      <div class="card chart-card">
+        <h3>Electricity Demand</h3>
+        <p class="desc">Historical vs predicted (TWh)</p>
+        <canvas id="demChart"></canvas>
+      </div>
+    </div>
+    <div class="section card chart-card">
+      <h3>Renewable Energy Coverage Over Time</h3>
+      <p class="desc">Renewable generation as a % of demand</p>
+      <canvas id="covChart"></canvas>
+    </div>
+  </div>
+</div>
+
+<script src="js/main.js"></script>
+<script src="js/data.js"></script>
+<script src="js/forecast.js"></script>
+<script src="js/api.js"></script>
+<script>
+renderNav("forecast.html");
+isBackendLive().then(live => renderLiveBadge("liveBadge", live));
+
+const countrySelect = document.getElementById("countrySelect");
+countrySelect.innerHTML = COUNTRIES.map(c => `<option value="${c.code}" ${c.code === "DE" ? "selected" : ""}>${c.name} — ${c.region}</option>`).join("");
+
+let charts = {};
+function destroyCharts() { Object.values(charts).forEach(c => c.destroy()); charts = {}; }
+
+const runBtn = document.getElementById("runBtn");
+runBtn.addEventListener("click", async () => {
+  const code = countrySelect.value;
+  const year = Number(document.getElementById("yearSelect").value);
+  runBtn.disabled = true;
+  runBtn.textContent = "Generating...";
+  const result = (await apiFetchForecast(code, year)) ?? generateForecast(code, year);
+  render(result);
+  runBtn.disabled = false;
+  runBtn.textContent = "Generate Forecast";
+});
+
+function statCard(tone, label, value, sub) {
+  return `<div class="card stat tone-${tone}"><div class="icon">●</div><div class="value">${value}</div><div class="label">${label}</div><div class="sub">${sub}</div></div>`;
+}
+
+function render(result) {
+  document.getElementById("empty").style.display = "none";
+  document.getElementById("results").style.display = "block";
+
+  const { stats, series, country, targetYear } = result;
+  document.getElementById("statCards").innerHTML = [
+    statCard("green", "Predicted Renewable Generation", `${fmt(stats.predictedGeneration)} TWh`, `${country.name} · ${targetYear}`),
+    statCard("blue", "Predicted Electricity Demand", `${fmt(stats.predictedDemand)} TWh`, `${country.name} · ${targetYear}`),
+    statCard("teal", "Renewable Energy Coverage", `${stats.coverage.toFixed(1)}%`, stats.coverage >= 100 ? "Fully covered" : "Below full coverage"),
+    statCard(stats.gap > 0 ? "sun" : "green", "Renewable Energy Gap", `${stats.gap > 0 ? "" : "−"}${fmt(Math.abs(Math.round(stats.gap)))} TWh`, stats.gap > 0 ? "Shortfall vs demand" : "Surplus over demand"),
+  ].join("");
+
+  destroyCharts();
+  const years = series.map(s => s.year);
+
+  charts.gen = new Chart(document.getElementById("genChart"), {
+    type: "line",
+    data: {
+      labels: years,
+      datasets: [
+        { label: "Historical", data: series.map(s => s.historicalGeneration), borderColor: "#16a34a", tension: 0.3, spanGaps: false },
+        { label: "Predicted", data: series.map(s => s.predictedGeneration), borderColor: "#16a34a", borderDash: [6, 4], tension: 0.3, spanGaps: false },
+      ],
+    },
+    options: { responsive: true, plugins: { legend: { position: "top" } } },
+  });
+
+  charts.dem = new Chart(document.getElementById("demChart"), {
+    type: "line",
+    data: {
+      labels: years,
+      datasets: [
+        { label: "Historical", data: series.map(s => s.historicalDemand), borderColor: "#2563eb", tension: 0.3, spanGaps: false },
+        { label: "Predicted", data: series.map(s => s.predictedDemand), borderColor: "#2563eb", borderDash: [6, 4], tension: 0.3, spanGaps: false },
+      ],
+    },
+    options: { responsive: true, plugins: { legend: { position: "top" } } },
+  });
+
+  charts.cov = new Chart(document.getElementById("covChart"), {
+    type: "line",
+    data: {
+      labels: years,
+      datasets: [
+        { label: "Coverage %", data: series.map(s => s.coverage), borderColor: "#0d9488", backgroundColor: "#0d948833", fill: true, tension: 0.3 },
+      ],
+    },
+    options: { responsive: true, plugins: { legend: { display: false } } },
+  });
+}
+</script>
+</body>
+</html>

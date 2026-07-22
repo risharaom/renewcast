@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Dashboard — RenewCast</title>
+<link rel="stylesheet" href="css/style.css" />
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand"><span class="dot"></span> RenewCast</div>
+    <nav class="links" id="nav"></nav>
+  </div>
+</header>
+
+<div class="container">
+  <div class="page-head">
+    <h1>Overview</h1>
+    <p>Snapshot of the platform across countries, forecasts and AI clusters.</p>
+    <div id="liveBadge" style="margin-top:10px;"></div>
+  </div>
+
+  <div class="grid grid-4" id="kpis"></div>
+
+  <div class="section grid grid-2" style="grid-template-columns: 2fr 1fr;">
+    <div class="card chart-card">
+      <h3>Featured forecast · Germany → 2030</h3>
+      <p class="desc">Renewable generation vs. electricity demand (TWh)</p>
+      <canvas id="featuredChart"></canvas>
+    </div>
+    <div class="card">
+      <h3 style="margin:0 0 4px;font-size:15px;">Quick links</h3>
+      <p class="desc" style="margin:2px 0 14px;">Jump into any workflow.</p>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <a href="forecast.html" class="badge" style="justify-content:flex-start;padding:10px 14px;">→ Generate forecast</a>
+        <a href="country.html" class="badge" style="justify-content:flex-start;padding:10px 14px;">→ Country profile</a>
+        <a href="clustering.html" class="badge" style="justify-content:flex-start;padding:10px 14px;">→ Explore clusters</a>
+        <a href="about.html" class="badge" style="justify-content:flex-start;padding:10px 14px;">→ How it works</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="js/main.js"></script>
+<script src="js/data.js"></script>
+<script src="js/forecast.js"></script>
+<script src="js/api.js"></script>
+<script>
+renderNav("index.html");
+isBackendLive().then(live => renderLiveBadge("liveBadge", live));
+
+function avg(xs) { return xs.reduce((a, b) => a + b, 0) / xs.length; }
+
+const kpis = [
+  { tone: "blue", label: "Countries tracked", value: String(COUNTRIES.length), sub: "World Bank regions" },
+  { tone: "green", label: "Avg renewable share", value: `${Math.round(avg(COUNTRIES.map(c => c.renewableShare)))}%`, sub: "Current, cross-country" },
+  { tone: "teal", label: "Avg carbon intensity", value: `${Math.round(avg(COUNTRIES.map(c => c.carbonIntensity)))} g/kWh`, sub: "Lower is cleaner" },
+  { tone: "sun", label: "AI clusters", value: "4", sub: "K-Means peer groups" },
+];
+document.getElementById("kpis").innerHTML = kpis.map(k => `
+  <div class="card stat tone-${k.tone}">
+    <div class="icon">●</div>
+    <div class="value">${k.value}</div>
+    <div class="label">${k.label}</div>
+    <div class="sub">${k.sub}</div>
+  </div>
+`).join("");
+
+(async () => {
+  const result = (await apiFetchForecast("DE", 2030)) ?? generateForecast("DE", 2030);
+  const years = result.series.filter(s => s.year >= 2019).map(s => s.year);
+  const gen = result.series.filter(s => s.year >= 2019).map(s => s.historicalGeneration ?? s.predictedGeneration);
+  const dem = result.series.filter(s => s.year >= 2019).map(s => s.historicalDemand ?? s.predictedDemand);
+
+  new Chart(document.getElementById("featuredChart"), {
+    type: "line",
+    data: {
+      labels: years,
+      datasets: [
+        { label: "Generation", data: gen, borderColor: "#16a34a", backgroundColor: "#16a34a22", fill: true, tension: 0.3 },
+        { label: "Demand", data: dem, borderColor: "#2563eb", backgroundColor: "#2563eb22", fill: true, tension: 0.3 },
+      ],
+    },
+    options: { responsive: true, plugins: { legend: { position: "top" } }, scales: { y: { beginAtZero: true } } },
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Clustering — RenewCast</title>
+<link rel="stylesheet" href="css/style.css" />
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand"><span class="dot"></span> RenewCast</div>
+    <nav class="links" id="nav"></nav>
+  </div>
+</header>
+
+<div class="container">
+  <div class="page-head">
+    <h1>AI Clustering</h1>
+    <p>K-Means groups countries with similar energy profiles. Select a country to reveal its peer group.</p>
+    <div id="liveBadge" style="margin-top:10px;"></div>
+  </div>
+
+  <div class="grid" style="grid-template-columns: 1.4fr 1fr;">
+    <div class="card chart-card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
+        <div>
+          <h3>Cluster scatter · renewable share vs. carbon intensity</h3>
+          <p class="desc">Bubble size = population. Colour = AI cluster.</p>
+        </div>
+        <div style="width:200px;">
+          <select id="countrySelect"></select>
+        </div>
+      </div>
+      <canvas id="scatterChart" style="max-height:380px;"></canvas>
+    </div>
+    <div class="card">
+      <h3 style="margin:0 0 4px;font-size:15px;">Peer group</h3>
+      <p class="desc" id="peerHeading" style="margin:2px 0 14px;"></p>
+      <div id="peerBadge"></div>
+      <div class="muted" style="font-size:13px;margin-top:10px;" id="peerDesc"></div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;" id="peerList"></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Discovered clusters</h2>
+    <div class="grid grid-2" id="clusterCards"></div>
+  </div>
+</div>
+
+<script src="js/main.js"></script>
+<script src="js/data.js"></script>
+<script src="js/kmeans.js"></script>
+<script src="js/clusters.js"></script>
+<script src="js/api.js"></script>
+<script>
+renderNav("clustering.html");
+
+let selected = "DE";
+let countries, clusters;
+
+async function loadData() {
+  const live = await isBackendLive();
+  renderLiveBadge("liveBadge", live);
+
+  if (live) {
+    const apiCountries = await apiFetchCountries();
+    const apiClusters = await apiFetchClusters();
+    if (apiCountries && apiClusters) {
+      countries = apiCountries;
+      clusters = apiClusters.map(cl => ({
+        ...cl,
+        members: cl.memberCodes.map(code => apiCountries.find(c => c.code === code)).filter(Boolean),
+      }));
+      return;
+    }
+  }
+
+  const local = computeClusters();
+  countries = local.countries;
+  clusters = local.clusters;
+}
+
+function renderChart() {
+  const points = countries.map(c => ({ x: c.renewableShare, y: c.carbonIntensity, r: 6 + Math.sqrt(c.population) / 3, code: c.code, name: c.name, cluster: c.cluster }));
+  const datasets = [0, 1, 2, 3].map(cl => ({
+    label: `Cluster ${cl}`,
+    data: points.filter(p => p.cluster === cl),
+    backgroundColor: CHART_COLORS[cl] + (points.some(p=>p.cluster===cl && p.code===selected) ? "" : "cc"),
+    borderColor: (ctx) => ctx.raw && ctx.raw.code === selected ? "#1c1917" : CHART_COLORS[cl],
+    borderWidth: (ctx) => ctx.raw && ctx.raw.code === selected ? 3 : 0,
+  }));
+
+  new Chart(document.getElementById("scatterChart"), {
+    type: "bubble",
+    data: { datasets },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { position: "top" },
+        tooltip: { callbacks: { label: (ctx) => `${ctx.raw.name}: ${ctx.raw.x}% renewable, ${ctx.raw.y} g/kWh` } },
+      },
+      scales: {
+        x: { title: { display: true, text: "Renewable share (%)" } },
+        y: { title: { display: true, text: "Carbon intensity (g/kWh)" } },
+      },
+    },
+  });
+}
+
+function renderPeer() {
+  const c = countries.find(x => x.code === selected);
+  const cluster = clusters[c.cluster];
+  document.getElementById("peerHeading").textContent = `Countries in the same K-Means cluster as ${c.name}.`;
+  document.getElementById("peerBadge").innerHTML = `<span class="badge solid">Cluster ${c.cluster}</span>`;
+  document.getElementById("peerDesc").textContent = cluster.description;
+  const peers = cluster.members.filter(m => m.code !== c.code);
+  document.getElementById("peerList").innerHTML = peers.length
+    ? peers.map(p => `<span class="badge">${p.name}</span>`).join("")
+    : `<span class="muted" style="font-size:12px;">No peers in this cluster.</span>`;
+}
+
+function renderClusterCards() {
+  document.getElementById("clusterCards").innerHTML = clusters.map(cl => `
+    <div class="card" style="overflow:hidden;padding:0;">
+      <div style="height:6px;background:${CHART_COLORS[cl.id]};"></div>
+      <div style="padding:20px;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
+          <div>
+            <div class="muted" style="font-size:11px;text-transform:uppercase;font-weight:650;letter-spacing:.03em;">Cluster ${cl.id}</div>
+            <div style="font-weight:650;font-size:15px;">${cl.name}</div>
+          </div>
+          <div class="chip chip-${cl.id}">${cl.id}</div>
+        </div>
+        <p class="muted" style="font-size:13px;margin:8px 0 0;">${cl.description}</p>
+        <div class="grid grid-2" style="margin-top:14px;">
+          <div class="card" style="padding:10px 12px;background:var(--bg);"><div class="muted" style="font-size:11.5px;">Avg renewable</div><div style="font-weight:650;">${cl.avgRenewable}%</div></div>
+          <div class="card" style="padding:10px 12px;background:var(--bg);"><div class="muted" style="font-size:11.5px;">Avg fossil</div><div style="font-weight:650;">${cl.avgFossil}%</div></div>
+          <div class="card" style="padding:10px 12px;background:var(--bg);"><div class="muted" style="font-size:11.5px;">Avg carbon</div><div style="font-weight:650;">${cl.avgCarbon} g/kWh</div></div>
+          <div class="card" style="padding:10px 12px;background:var(--bg);"><div class="muted" style="font-size:11.5px;">Members</div><div style="font-weight:650;">${cl.members.length}</div></div>
+        </div>
+        <div style="margin-top:14px;display:flex;flex-wrap:wrap;gap:6px;">
+          ${cl.members.map(m => `<span class="badge${m.code === selected ? " solid" : ""}">${m.name}</span>`).join("")}
+        </div>
+      </div>
+    </div>
+  `).join("");
+}
+
+(async () => {
+  await loadData();
+
+  const countrySelect = document.getElementById("countrySelect");
+  countrySelect.innerHTML = countries.map(c => `<option value="${c.code}" ${c.code === selected ? "selected" : ""}>${c.name}</option>`).join("");
+  countrySelect.addEventListener("change", (e) => { selected = e.target.value; renderPeer(); renderChart(); });
+
+  renderChart();
+  renderPeer();
+  renderClusterCards();
+})();
+</script>
+</body>
+</html>
